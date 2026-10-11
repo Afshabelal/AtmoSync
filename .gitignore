@@ -1,0 +1,16 @@
+# Python virtual environment
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Generated ZIP archive
+*.zip
+
+# Temporary PowerPoint lock files
+~$*.pptx
+
+# Environment secrets
+.env

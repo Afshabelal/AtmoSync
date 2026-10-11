@@ -1,0 +1,7 @@
+location,avg_temperature_c,avg_humidity_pct,avg_rainfall_mm,avg_wind_speed_kmh,records
+Bengaluru Central,23.76,66.55,0.09,10.8,8760
+Electronic City,23.06,70.66,0.08,13.02,8760
+Jayanagar,23.53,68.4,0.1,11.15,8760
+Rajajinagar,23.76,66.55,0.09,10.8,8760
+Whitefield,23.6,68.02,0.08,11.31,8760
+Yelahanka,23.43,67.87,0.08,12.0,8760
