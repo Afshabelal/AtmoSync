@@ -2,289 +2,205 @@
 from pathlib import Path
 
 import pandas as pd
-import plotly.express as px
 import streamlit as st
+import plotly.express as px
 
-# Project paths
-PROJECT_DIR = Path(__file__).resolve().parent.parent
-DATA_FILE = (
-    PROJECT_DIR
-    / "data"
-    / "processed"
-    / "atmosync_feature_engineered.csv"
-)
-
-# Page setup
 st.set_page_config(
-    page_title="AtmoSync Dashboard",
+    page_title="AtmoSync: Micro-Climate Analytics",
     page_icon="🌦️",
-    layout="wide",
+    layout="wide"
 )
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_FILE = BASE_DIR / "data" / "processed" / "atmosync_feature_engineered.csv"
 
 st.title("🌦️ AtmoSync: Micro-Climate Analytics")
-st.caption(
-    "Weather comparison and environmental opportunity screening "
-    "across Bengaluru locations"
-)
-
-# Load data
-@st.cache_data
-def load_data(file_path):
-    data = pd.read_csv(file_path)
-    data["timestamp"] = pd.to_datetime(
-        data["timestamp"], errors="coerce"
-    )
-    return data
-
+st.write("Micro-climate data analysis across six Bengaluru locations.")
 
 if not DATA_FILE.exists():
     st.error(f"Data file not found: {DATA_FILE}")
-    st.info(
-        "Please check that the feature-engineered CSV exists "
-        "inside data/processed."
-    )
     st.stop()
 
-df = load_data(str(DATA_FILE))
+df = pd.read_csv(DATA_FILE)
 
 required_columns = [
-    "timestamp",
-    "location",
     "temperature_c",
     "relative_humidity_pct",
-    "opportunity_score",
-    "opportunity_flag",
+    "location"
 ]
 
-missing_columns = [
-    col for col in required_columns if col not in df.columns
-]
+missing_columns = [col for col in required_columns if col not in df.columns]
 
 if missing_columns:
-    st.error(f"Required columns missing: {missing_columns}")
+    st.error(f"Missing columns: {', '.join(missing_columns)}")
+    st.write("Available columns:", list(df.columns))
     st.stop()
 
-# Convert numeric fields safely
-for col in [
-    "temperature_c",
-    "relative_humidity_pct",
-    "opportunity_score",
-    "precipitation_mm",
-    "wind_speed_kmh",
-]:
-    if col in df.columns:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-
-# Normalize opportunity flag
-df["opportunity_flag"] = (
-    df["opportunity_flag"]
-    .astype(str)
-    .str.strip()
-    .str.lower()
-    .isin(["true", "1", "yes"])
+df["temperature_c"] = pd.to_numeric(
+    df["temperature_c"], errors="coerce"
+)
+df["relative_humidity_pct"] = pd.to_numeric(
+    df["relative_humidity_pct"], errors="coerce"
 )
 
-# Sidebar filters
-st.sidebar.header("Filter Weather Data")
+st.sidebar.header("Filters")
 
 locations = sorted(df["location"].dropna().unique().tolist())
+
 selected_locations = st.sidebar.multiselect(
-    "Select location(s)",
+    "Select Locations",
     options=locations,
-    default=locations,
+    default=locations
 )
 
-valid_dates = df["timestamp"].dropna()
-
-if not valid_dates.empty:
-    min_date = valid_dates.min().date()
-    max_date = valid_dates.max().date()
-
-    selected_dates = st.sidebar.date_input(
-        "Select date range",
-        value=(min_date, max_date),
-        min_value=min_date,
-        max_value=max_date,
-    )
-else:
-    selected_dates = ()
-
-# Apply filters
 filtered = df[df["location"].isin(selected_locations)].copy()
 
-if len(selected_dates) == 2:
-    start_date, end_date = selected_dates
-    filtered = filtered[
-        filtered["timestamp"].dt.date.between(start_date, end_date)
-    ]
-
 if filtered.empty:
-    st.warning("No records match the selected filters.")
+    st.warning("Please select at least one location.")
     st.stop()
 
-# Key metrics
-total_records = len(filtered)
-location_count = filtered["location"].nunique()
-avg_temp = filtered["temperature_c"].mean()
-avg_humidity = filtered["relative_humidity_pct"].mean()
-flagged_count = int(filtered["opportunity_flag"].sum())
+col1, col2, col3 = st.columns(3)
 
-c1, c2, c3, c4, c5 = st.columns(5)
-
-c1.metric("Weather Records", f"{total_records:,}")
-c2.metric("Locations", location_count)
-c3.metric(
+col1.metric("Total Records", f"{len(filtered):,}")
+col2.metric(
     "Average Temperature",
-    f"{avg_temp:.2f} °C" if pd.notna(avg_temp) else "N/A",
+    f"{filtered['temperature_c'].mean():.2f} °C"
 )
-c4.metric(
+col3.metric(
     "Average Humidity",
-    f"{avg_humidity:.2f}%" if pd.notna(avg_humidity) else "N/A",
+    f"{filtered['relative_humidity_pct'].mean():.2f} %"
 )
-c5.metric("Flagged Records", flagged_count)
-
-st.divider()
-
-# Location-wise summaries
-st.subheader("📍 Location-wise Weather Summary")
-
-summary_columns = {
-    "temperature_c": "Average Temperature (°C)",
-    "relative_humidity_pct": "Average Humidity (%)",
-}
-
-if "precipitation_mm" in filtered.columns:
-    summary_columns["precipitation_mm"] = "Average Precipitation (mm)"
-
-if "wind_speed_kmh" in filtered.columns:
-    summary_columns["wind_speed_kmh"] = "Average Wind Speed (km/h)"
-
-summary = (
-    filtered.groupby("location", as_index=False)
-    .agg({
-        col: "mean" for col in summary_columns
-    })
-    .rename(columns=summary_columns)
-    .round(2)
-)
-
-st.dataframe(summary, width="stretch", hide_index=True)
 
 # Temperature chart
-st.subheader("🌡️ Average Temperature by Location")
+st.subheader("Average Temperature by Location")
 
-temp_chart = (
+temp_summary = (
     filtered.groupby("location", as_index=False)["temperature_c"]
     .mean()
-    .sort_values("temperature_c", ascending=False)
 )
 
 fig_temp = px.bar(
-    temp_chart,
+    temp_summary,
     x="location",
     y="temperature_c",
-    color="temperature_c",
-    labels={
-        "location": "Location",
-        "temperature_c": "Average Temperature (°C)",
-    },
-    title="Location-wise Average Temperature",
+    text_auto=".2f",
+    title="Average Temperature by Location"
 )
+
+fig_temp.update_layout(
+    xaxis_title="Location",
+    yaxis_title="Temperature (°C)"
+)
+
 st.plotly_chart(fig_temp, width="stretch")
 
 # Humidity chart
-st.subheader("💧 Average Humidity by Location")
+st.subheader("Average Humidity by Location")
 
-humidity_chart = (
+humidity_summary = (
     filtered.groupby("location", as_index=False)["relative_humidity_pct"]
     .mean()
-    .sort_values("relative_humidity_pct", ascending=False)
 )
 
 fig_humidity = px.bar(
-    humidity_chart,
+    humidity_summary,
     x="location",
     y="relative_humidity_pct",
-    color="relative_humidity_pct",
-    labels={
-        "location": "Location",
-        "relative_humidity_pct": "Average Humidity (%)",
-    },
-    title="Location-wise Average Relative Humidity",
-)
-st.plotly_chart(fig_humidity, use_container_width=True)
-
-# Temperature trend over time
-st.subheader("📈 Temperature Trend Over Time")
-
-trend = (
-    filtered.dropna(subset=["timestamp", "temperature_c"])
-    .groupby(pd.Grouper(key="timestamp", freq="D"))["temperature_c"]
-    .mean()
-    .reset_index()
+    text_auto=".2f",
+    title="Average Humidity by Location"
 )
 
-if not trend.empty:
-    fig_trend = px.line(
-        trend,
-        x="timestamp",
-        y="temperature_c",
-        labels={
-            "timestamp": "Date",
-            "temperature_c": "Average Temperature (°C)",
-        },
-        title="Daily Average Temperature",
-    )
-    st.plotly_chart(fig_trend, use_container_width=True)
-else:
-    st.info("No valid temperature trend data is available.")
-
-# Opportunity screening
-st.subheader("🔎 Environmental Opportunity Screening")
-
-st.caption(
-    "The score is an analytical screening indicator based on "
-    "environmental differences. It does not guarantee financial profit."
+fig_humidity.update_layout(
+    xaxis_title="Location",
+    yaxis_title="Humidity (%)"
 )
 
-flagged = filtered[filtered["opportunity_flag"]].copy()
+st.plotly_chart(fig_humidity, width="stretch")
 
-if flagged.empty:
-    st.info("No records meet the configured opportunity threshold in this selection.")
-else:
-    display_columns = [
-        col for col in [
-            "timestamp",
-            "location",
-            "temperature_c",
-            "relative_humidity_pct",
-            "temperature_gap_c",
-            "humidity_gap_pct",
-            "opportunity_score",
-        ]
-        if col in flagged.columns
+# Opportunity records
+if "opportunity_flag" in filtered.columns:
+    st.subheader("Micro-Climate Opportunity Records")
+
+    opportunities = filtered[
+        filtered["opportunity_flag"]
+        .astype(str)
+        .str.lower()
+        .isin(["true", "1"])
     ]
 
-    flagged = flagged.sort_values(
-        "opportunity_score", ascending=False
+    st.metric("Flagged Records", f"{len(opportunities):,}")
+
+    if not opportunities.empty:
+        display_columns = [
+            col for col in [
+                "timestamp",
+                "location",
+                "temperature_c",
+                "relative_humidity_pct",
+                "opportunity_score"
+            ]
+            if col in opportunities.columns
+        ]
+
+        st.dataframe(
+            opportunities[display_columns],
+            hide_index=True,
+            width="stretch"
+        )
+    else:
+        st.info("No opportunity records found for the selected locations.")
+
+# Monthly temperature trend
+if "month" in filtered.columns:
+    filtered["month"] = pd.to_numeric(
+        filtered["month"], errors="coerce"
     )
 
-    st.dataframe(
-        flagged[display_columns],
-        use_container_width=True,
-        hide_index=True,
+    month_names = {
+        1: "January",
+        2: "February",
+        3: "March",
+        4: "April",
+        5: "May",
+        6: "June",
+        7: "July",
+        8: "August",
+        9: "September",
+        10: "October",
+        11: "November",
+        12: "December"
+    }
+
+    monthly_summary = (
+        filtered.dropna(subset=["month"])
+        .groupby("month")["temperature_c"]
+        .mean()
+        .reset_index()
+        .sort_values("month")
     )
 
-# Download filtered data
-st.subheader("⬇️ Download Filtered Data")
+    monthly_summary["month_name"] = (
+        monthly_summary["month"].astype(int).map(month_names)
+    )
 
-csv_data = filtered.to_csv(index=False).encode("utf-8")
+    fig_month = px.line(
+        monthly_summary,
+        x="month_name",
+        y="temperature_c",
+        markers=True,
+        category_orders={
+            "month_name": [
+                "January", "February", "March", "April",
+                "May", "June", "July", "August",
+                "September", "October", "November", "December"
+            ]
+        },
+        title="Average Monthly Temperature"
+    )
 
-st.download_button(
-    label="Download filtered CSV",
-    data=csv_data,
-    file_name="atmosync_filtered_data.csv",
-    mime="text/csv",
-)
+    fig_month.update_layout(
+        xaxis_title="Month",
+        yaxis_title="Temperature (°C)"
+    )
 
-st.caption("AtmoSync | Data Analytics Internship Project")
+    st.plotly_chart(fig_month, width="stretch")
